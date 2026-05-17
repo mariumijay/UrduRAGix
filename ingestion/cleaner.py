@@ -24,7 +24,7 @@ ARABIC_DIACRITICS = re.compile(
     r"[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06DC\u06DF-\u06E4\u06E7\u06E8\u06EA-\u06ED]"
 )
 
-OCR_NOISE_CHARS = re.compile(r"[|\\/<>{}[\]#@$%^&*_=+`~]")
+OCR_NOISE_CHARS = re.compile(r"[|\\/\u003c\u003e{}[\]#@$%^\u0026*_=+`~]")
 ENGLISH_CHARS   = re.compile(r"[a-zA-Z0-9]+")
 MULTI_SPACE     = re.compile(r"[ \t]+")
 MULTI_NEWLINE   = re.compile(r"\n{3,}")
@@ -42,6 +42,33 @@ OCR_CORRECTIONS: dict[str, str] = {
 }
 
 SENTENCE_END = re.compile(r"[\u06D4\u061F!]$")  # ۔ ؟ !
+
+# ---------------------------------------------------------------------------
+# Verse block detection — preserve line breaks inside poetry
+# ---------------------------------------------------------------------------
+# Markers that START a verse block (بند نمبر ۱, شعر نمبر 4, شعر ۲:, etc.)
+VERSE_BLOCK_START = re.compile(
+    r"^(?:بند\s*نمبر|شعر\s*نمبر|شعر\s*[۰-۹\d]+)"
+)
+# Markers that END a verse block (مفہوم:, تشریح:, or a long prose line)
+VERSE_BLOCK_END = re.compile(
+    r"^(?:مفہوم|تشریح|خلاصہ|مرکزی خیال|مشق|﴿مشق﴾|کثیر الانتخابی)"
+)
+
+
+def _is_inside_verse_block(line: str, in_verse: bool) -> tuple[bool, bool]:
+    """
+    Determine if the current line is inside a verse block.
+    Returns (is_verse_now, emit_newline_before).
+    """
+    stripped = line.strip()
+    if not stripped:
+        return in_verse, False
+    if VERSE_BLOCK_START.search(stripped):
+        return True, True  # entering verse block
+    if VERSE_BLOCK_END.search(stripped):
+        return False, False  # leaving verse block
+    return in_verse, in_verse  # stay in current mode
 
 
 def clean_text(raw_text: str) -> str:
@@ -75,10 +102,11 @@ def clean_text(raw_text: str) -> str:
     # 8. Merge hyphenated line breaks
     text = re.sub(r"(\S)-\n(\S)", r"\1\2", text)
 
-    # 9. Merge short broken lines
+    # 9. Merge short broken lines — but PRESERVE newlines inside verse blocks
     lines = text.split("\n")
     merged: list[str] = []
     buffer = ""
+    in_verse_block = False
     for line in lines:
         line = line.strip()
         if not line:
@@ -87,10 +115,23 @@ def clean_text(raw_text: str) -> str:
                 buffer = ""
             merged.append("")
             continue
-        buffer = (buffer + " " + line).strip() if buffer else line
-        if SENTENCE_END.search(line):
-            merged.append(buffer.strip())
-            buffer = ""
+
+        # Check verse block boundaries
+        was_in_verse = in_verse_block
+        in_verse_block, keep_newline = _is_inside_verse_block(line, in_verse_block)
+
+        if in_verse_block or was_in_verse:
+            # Inside a verse block: flush buffer and keep each line separate
+            if buffer:
+                merged.append(buffer.strip())
+                buffer = ""
+            merged.append(line)
+        else:
+            # Normal prose: merge short lines as before
+            buffer = (buffer + " " + line).strip() if buffer else line
+            if SENTENCE_END.search(line):
+                merged.append(buffer.strip())
+                buffer = ""
     if buffer:
         merged.append(buffer.strip())
 

@@ -18,8 +18,7 @@ import re
 import sys
 from pathlib import Path
 
-import arabic_reshaper
-from bidi.algorithm import get_display
+from utils.urdu_render import format_for_console as format_urdu
 from dotenv import load_dotenv
 from config.config import GENRE_TO_MODE
 
@@ -133,11 +132,7 @@ state = _State()
 
 
 # ── Urdu formatter ────────────────────────────────────────────────────────────
-
-def format_urdu(text: str) -> str:
-    if not isinstance(text, str):
-        return str(text)
-    return get_display(arabic_reshaper.reshape(text))
+# The format_urdu function is now imported from utils.urdu_render
 
 def _dedupe_chunks(chunks: list[dict], similarity_threshold: float = 0.85) -> list[dict]:
     """Remove near-duplicate chunks based on text overlap.
@@ -385,35 +380,58 @@ def retrieve_for_paper(current_state) -> tuple[list[dict], list[dict]]:
         "جملہ درستی ضرب الامثال قواعد",
     ]
     
+    # Dedicated poetry subquery with higher top_k for better verse retrieval
+    POETRY_SUBQUERIES = [
+        "اشعار بند نمبر نظم غزل حمد نعت شعر",
+        "شعر تشریح مصرع بند",
+    ]
+    
     all_fused = []
     
     for subq in SUBQUERIES:
         result_lists = []
         if current_state.ready_a:
-            result_lists.append(current_state.faiss_a.search(subq, top_k=8))
-            result_lists.append(current_state.bm25_a.search(subq, top_k=8))
+            result_lists.append(current_state.faiss_a.search(subq, top_k=10))
+            result_lists.append(current_state.bm25_a.search(subq, top_k=10))
         if current_state.ready_b:
-            result_lists.append(current_state.faiss_b.search(subq, top_k=8))
-            result_lists.append(current_state.bm25_b.search(subq, top_k=8))
+            result_lists.append(current_state.faiss_b.search(subq, top_k=10))
+            result_lists.append(current_state.bm25_b.search(subq, top_k=10))
             
         if result_lists:
-            # Merge results for this subquery
+            subq_fused = reciprocal_rank_fusion(result_lists)
+            all_fused.extend(subq_fused)
+    
+    # Poetry-specific retrieval with higher top_k
+    for subq in POETRY_SUBQUERIES:
+        result_lists = []
+        if current_state.ready_a:
+            result_lists.append(current_state.faiss_a.search(subq, top_k=15))
+            result_lists.append(current_state.bm25_a.search(subq, top_k=15))
+        if result_lists:
             subq_fused = reciprocal_rank_fusion(result_lists)
             all_fused.extend(subq_fused)
 
     # Global deduplication across all subquery results
     unique_chunks = _dedupe_chunks(all_fused, similarity_threshold=0.85)
     
-    # Keep top 40 unique chunks
-    unique_chunks = unique_chunks[:40]
+    # Keep top 50 unique chunks (increased from 40 for better poetry coverage)
+    unique_chunks = unique_chunks[:50]
     
     meta_a = [c for c in unique_chunks if c.get("dataset") == "urdu_A"]
     meta_b = [c for c in unique_chunks if c.get("dataset") == "urdu_B"]
     
+    # Log verse chunk availability
+    verse_a = sum(1 for c in meta_a if c.get("is_verse") is True)
+    logger.info(f"Paper retrieval: {len(meta_a)} urdu_A chunks ({verse_a} verse), {len(meta_b)} urdu_B chunks")
+    if verse_a == 0:
+        print("[WARN] No is_verse=True chunks found in retrieval — poetry quality may be poor")
+    
     return meta_a, meta_b
 
 # ── Paper helper (shared between fast-path and LLM-path) ──────────────────────
-async def _run_paper(urdu_query: str, meta_a: list[dict], meta_b: list[dict]) -> None:
+from typing import AsyncGenerator
+
+async def _run_paper(urdu_query: str, meta_a: list[dict], meta_b: list[dict]) -> AsyncGenerator[str, None]:
     """
     Generate a complete Class 9 Punjab Board Urdu paper.
     Hissa-e-Awal (MCQs, 15 marks) = NOT generated (not available online).
@@ -425,7 +443,7 @@ async def _run_paper(urdu_query: str, meta_a: list[dict], meta_b: list[dict]) ->
     Part 3 → Q4: Mukhtasar Sawalat (8 questions, answer 5)
     Part 4 → Q5+Q6: Khulasa + Markazi Khyal
     Part 5 → Q7: Khat ya Darkhwast
-    Part 6 → Q8+Q9: Mazmoon/Mukalma + Qawaid (jumlay + zarb ul amsal)
+    Part 6 → Q8+Q9: Story/Mukalma + Qawaid (jumlay + zarb ul amsal)
     """
     print("\\n[پرچہ ساز] جاری ہے… (حصہ دوم — Q2 تا Q9 — تقریباً 2.5 منٹ)")
     print("نوٹ: حصہ اول (MCQs) الگ پرچے پر ہے — یہاں نہیں بنایا جاتا۔\\n")
@@ -433,24 +451,55 @@ async def _run_paper(urdu_query: str, meta_a: list[dict], meta_b: list[dict]) ->
     import random
  
     # ── Genre pools ────────────────────────────────────────────────────────
-    def by_genre(pool, genres):
+    def by_genre(pool, genres, must_be_verse=False):
         hits = [c for c in pool if c.get("genre", "") in genres]
-        return hits if hits else pool
+        if not hits:
+            hits = pool
+            
+        if must_be_verse:
+            verse_hits = [c for c in hits if c.get("is_verse") is True]
+            return verse_hits if verse_hits else hits
+        return hits
  
-    nazam_pool   = by_genre(meta_a, {"نظم", "تشریح_نظم", "tashreeh_nazam"})
-    ghazal_pool  = by_genre(meta_a, {"غزل", "تشریح_غزل", "tashreeh_ghazal"})
+    mcqs_pool = by_genre(meta_a, {"mcqs", "MCQ", "mcq"})
+    nazam_pool   = by_genre(meta_a, {"نظم", "تشریح_نظم", "tashreeh_nazam", "حمد", "نعت", "محنت کی برکات", "جاوید کے نام", "پیام لطیف", "محمد", "کرکٹ اور مشاعرہ"}, must_be_verse=True)
+    ghazal_pool  = by_genre(meta_a, {"غزل", "تشریح_غزل", "tashreeh_ghazal"}, must_be_verse=True)
     sabaq_pool   = by_genre(meta_a, {"نثر", "سبق", "nasar_tashreeh", "khulasa", "short_question"})
     khat_pool    = by_genre(meta_b, {"خط", "letter"})
     darkhwast_pool = by_genre(meta_b, {"درخواست", "application"})
-    essay_pool   = by_genre(meta_b, {"مضمون", "story", "dialogue"})
+    story_pool   = by_genre(meta_b, {"کہانی","story"})
+    dialogue_pool = by_genre(meta_b, {"مکالمہ","dialogue"})
     qawaid_pool  = by_genre(meta_b, {"قواعد", "zarbul_imsal", "sentence_correction"})
+    
+    # Log verse availability for debugging
+    nazam_verses = sum(1 for c in nazam_pool if c.get("is_verse") is True)
+    ghazal_verses = sum(1 for c in ghazal_pool if c.get("is_verse") is True)
+    print(f"  📊 Verse pools: nazam={len(nazam_pool)} ({nazam_verses} verse), ghazal={len(ghazal_pool)} ({ghazal_verses} verse)")
  
     used_ids: set = set()
  
-    def pick(pool, n):
+    def pick(pool, n, prioritize_verse=False):
         available = [c for c in pool if c.get("chunk_id") not in used_ids]
+        if prioritize_verse:
+            verses = [c for c in available if c.get("is_verse") is True]
+            others = [c for c in available if c.get("is_verse") is not True]
+            available = verses + others # prioritized order
+        else:
+            verses = []
+            
         n = min(n, len(available))
-        chosen = random.sample(available, n) if n > 0 else []
+        # For verses, strongly prefer verse-only chunks
+        if prioritize_verse and len(verses) >= n:
+            chosen = random.sample(verses, n)
+        elif prioritize_verse and verses:
+            # Take all available verses + supplement with others
+            chosen = list(verses)
+            remaining = n - len(chosen)
+            if remaining > 0 and others:
+                chosen.extend(random.sample(others, min(remaining, len(others))))
+        else:
+            chosen = random.sample(available, n) if n > 0 else []
+            
         used_ids.update(c.get("chunk_id") for c in chosen if c.get("chunk_id"))
         return chosen
  
@@ -460,92 +509,110 @@ async def _run_paper(urdu_query: str, meta_a: list[dict], meta_b: list[dict]) ->
     # ── Per-part context chunks ────────────────────────────────────────────
     # Part 0: header — no chunks
     p0 = []
+    
+    # Part 1 (Q1): MCQs
+    p1 = cap(pick(mcqs_pool, 15), max_chars=400)
+    # Part 2 (Q2): nazam ashaar + ghazal ashaar for tashreeh
+    # Increased pool sizes for better verse coverage; higher max_chars to avoid truncating verses
+    p2 = cap(pick(nazam_pool, 8, prioritize_verse=True) + pick(ghazal_pool, 6, prioritize_verse=True), max_chars=800)
  
-    # Part 1 (Q2): nazam ashaar + ghazal ashaar for tashreeh
-    p1 = cap(pick(nazam_pool, 6) + pick(ghazal_pool, 4), max_chars=500)
+    # Part 3 (Q3): sabaq passages for nasr tashreeh
+    p3 = cap(pick(sabaq_pool, 4), max_chars=300)
  
-    # Part 2 (Q3): sabaq passages for nasr tashreeh
-    p2 = cap(pick(sabaq_pool, 4), max_chars=300)
- 
-    # Part 3 (Q4): mixed urdu_A for mukhtasar sawalat
-    p3 = cap(pick(sabaq_pool, 4) + pick(nazam_pool, 2) + pick(ghazal_pool, 2))
- 
-    # Part 4 (Q5+Q6): sabaq for khulasa + nazam for markazi khyal
-    p4 = cap(pick(sabaq_pool, 3) + pick(nazam_pool, 2))
- 
-    # Part 5 (Q7): khat + darkhwast samples
-    p5 = cap(pick(khat_pool, 2) + pick(darkhwast_pool, 2), max_chars=250)
- 
-    # Part 6 (Q8+Q9): dialogue/story + qawaid
+    # Part 4 (Q4): mixed urdu_A for mukhtasar sawalat
+    p4 = cap(pick(sabaq_pool, 4) + pick(nazam_pool, 2) + pick(ghazal_pool, 2))
+
+    # Part 5 (Q5): sabaq for khulasa
+    p5 = cap(pick(sabaq_pool, 2), max_chars=400)
+
+    # Part 6 (Q6): nazam for markazi khyal
+    p6 = cap(pick(nazam_pool, 1), max_chars=400)
+
+    # Part 7 (Q7): khat + darkhwast samples
+    p7 = cap(pick(khat_pool, 2) + pick(darkhwast_pool, 2), max_chars=250)
+
+    # Part 8 (Q8): dialogue/story
     dialogue_pool = by_genre(meta_b, {"مکالمہ", "dialogue"})
     story_pool    = by_genre(meta_b, {"کہانی", "story"})
-    p6 = cap(pick(dialogue_pool, 2) + pick(story_pool, 2) + pick(qawaid_pool, 3))
- 
+    p8 = cap(pick(dialogue_pool, 2) + pick(story_pool, 2), max_chars=400)
+
+    # Part 9 (Q9): qawaid
+    p9 = cap(pick(qawaid_pool, 3), max_chars=400)
+
     # Fallback
     fallback = cap(pick(meta_a, 4) + pick(meta_b, 2))
- 
+
     part_configs = [
         (0, p0,             200),   # سرورق
-        (1, p1 or fallback, 900),   # Q2 تشریح اشعار
-        (2, p2 or fallback, 900),   # Q3 نثر تشریح
-        (3, p3 or fallback, 800),   # Q4 مختصر سوالات
-        (4, p4 or fallback, 800),   # Q5+Q6 خلاصہ + مرکزی خیال
-        (5, p5 or fallback, 700),   # Q7 خط یا درخواست
-        (6, p6 or fallback, 700),   # Q8+Q9 مضمون/مکالمہ + قواعد
+        (1, p1 or fallback, 1200),  # Q1 MCQs (increased to 1200 tokens to fit 15 questions)
+        (2, p2 or fallback, 900),   # Q2 تشریح اشعار
+        (3, p3 or fallback, 900),   # Q3 نثر تشریح
+        (4, p4 or fallback, 800),   # Q4 مختصر سوالات
+        (5, p5 or fallback, 500),   # Q5 خلاصہ
+        (6, p6 or fallback, 500),   # Q6 مرکزی خیال
+        (7, p7 or fallback, 700),   # Q7 خط یا درخواست
+        (8, p8 or fallback, 600),   # Q8 مضمون/کہانی یا مکالمہ
+        (9, p9 or fallback, 500),   # Q9 قواعد
     ]
- 
+
     part_labels = {
         0: "سرورق",
-        1: "سوال ۲: تشریح اشعار",
-        2: "سوال ۳: نثر تشریح",
-        3: "سوال ۴: مختصر سوالات",
-        4: "سوال ۵+۶: خلاصہ + مرکزی خیال",
-        5: "سوال ۷: خط یا درخواست",
-        6: "سوال ۸+۹: مضمون/مکالمہ + قواعد",
+        1: "سوال ۱: معروضی (MCQs)",
+        2: "سوال ۲: تشریح اشعار",
+        3: "سوال ۳: نثر تشریح",
+        4: "سوال ۴: مختصر سوالات",
+        5: "سوال ۵: خلاصہ",
+        6: "سوال ۶: مرکزی خیال + شاعر کا حال",
+        7: "سوال ۷: خط یا درخواست",
+        8: "سوال ۸: کہانی یا مکالمہ",
+        9: "سوال ۹: قواعد",
     }
- 
+
     for i, (part, p_chunks, max_tok) in enumerate(part_configs):
         label = part_labels.get(part, f"حصہ {part}")
         print(f"  ⏳ {label} تیار ہو رہا ہے…")
         messages = build_paper_prompt(urdu_query, p_chunks, part=part)
- 
-        response = await _create_completion(
-            DEFAULT_MODEL, messages, False,
-            temperature=0.5,
-            max_tokens=max_tok,
-        )
- 
-        raw = response.choices[0].message.content
-        paper_text = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+
+        for attempt in range(2):
+            response = await _create_completion(
+                get_model_for_genre("paper"), messages, False,
+                temperature=0.2,
+                max_tokens=max_tok,
+            )
+
+            raw = response.choices[0].message.content
+            paper_text = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+
+            # Validation: Ensure expected question number appears in output
+            if part > 0 and str(part) not in paper_text and _urdu_numeral(part) not in paper_text:
+                if attempt == 0:
+                    print(f"  ⚠️ حصہ {part} کی فارمیٹنگ درست نہیں نکلی۔ دوبارہ کوشش…")
+                    continue
+                else:
+                    # Inject fallback header so numbering stays intact
+                    header = (
+                        "━" * 38 + "\n"
+                        + f"سوال نمبر {part}\n"
+                        + "━" * 38 + "\n"
+                    )
+                    paper_text = header + paper_text
+            break
+
         print(format_urdu(paper_text))
-        print("\\n" + "─" * 50 + "\\n")
- 
+        print("\n" + "─" * 50 + "\n")
+
         # Rate limit guard between parts (skip after last)
         if i < len(part_configs) - 1:
-            await asyncio.sleep(20)
- 
+            await asyncio.sleep(65)
+
     print()
     print(format_urdu("═" * 50))
-    print(format_urdu("پرچہ مکمل ہوا — حصہ دوم (Q2 تا Q9 = ۶۰ نمبر)"))
+    print(format_urdu("پرچہ مکمل ہوا"))
     print(format_urdu("═" * 50))
 
- 
-print("=== PATCH FILE READY ===")
-print()
-print("STEP 1: In generation/prompt_b.py:")
-print("  - Replace PAPER_COMMON, PAPER_SYSTEM_PROMPT_PART0 through PART6")
-print("  - Replace _PART_PROMPTS dict")
-print("  - Replace build_paper_prompt() function")
-print()
-print("STEP 2: In main.py:")
-print("  - Replace _run_paper() function with NEW_RUN_PAPER_FUNCTION above")
-print()
-print("KEY CHANGES:")
-print("  ✓ 7 parts (0-6) instead of 6, Part 0 = header only")
-print("  ✓ Q2 = nazam (4) + ghazal (3) ashaar, student chooses 4")
-print("  ✓ Q3 = 2 nasr passages (الف and ب), choose 1, with خط کشیدہ الفاظ")
-print("  ✓ Q4 = 8 questions (5 to answer), 2 marks each")
-print("  ✓ Q6 = markazi khyal + shair ka haal in same question")
-print("  ✓ Q8 = mazmoon OR mukalma (both options)")
-print("  ✓ Q9(الف) = 5 jumlay + Q9(ب) = 4 zarb ul amsal")
-print("  ✓ NO MCQs (Hissa-e-Awal not generated)")
+    print("Done.")
+
+
+def _urdu_numeral(n: int) -> str:
+    urdu_nums = ["۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹"]
+    return "".join(urdu_nums[int(digit)] for digit in str(n))

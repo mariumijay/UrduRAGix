@@ -168,7 +168,7 @@ async def query_endpoint(req: QueryRequest):
     else:
         genre = await classify_query_full(urdu_query)
         model = get_model_for_genre(genre)
-        chunks = _retrieve(urdu_query, top_k=5)
+        chunks = _retrieve(urdu_query, top_k=req.top_k)
 
     if req.stream:
         async def event_stream():

@@ -42,12 +42,25 @@ def preprocess(book_path: str, title: str = "Urdu", author: str = "Unknown") -> 
     clean = clean_text(raw_text)
     print(f"      Done in {time.time()-t0:.1f}s  ({len(clean):,} chars after cleaning)\n")
 
-    print("[3/4] Chunking on sentence boundaries …")
+    print("[3/4] Chunking & Segmenting …")
     t0 = time.time()
+    # The new v2 chunker automatically handles verse block extraction inside chunk_text
     chunks = chunk_text(clean, book_title=title, author=author, chunk_size=300, overlap=60)
     print(f"      Done in {time.time()-t0:.1f}s  ({len(chunks):,} chunks created)\n")
 
-    print("[4/4] Embedding chunks and building FAISS + BM25 indexes …")
+    # Count verse statistics
+    verse_count = sum(1 for c in chunks if getattr(c, "chunk_type", "") == "verse" or getattr(c, "is_verse", False))
+    print(f"      Total verse chunks: {verse_count} / {len(chunks)}\n")
+    
+    # Log detected poems
+    poem_titles = set()
+    for c in chunks:
+        if (getattr(c, "chunk_type", "") == "verse" or getattr(c, "is_verse", False)) and c.chapter:
+            poem_titles.add(c.chapter)
+    if poem_titles:
+        print(f"      Detected poems: {', '.join(poem_titles)}")
+
+    print(f"\n[5/5] Embedding chunks and building FAISS + BM25 indexes …")
     t0 = time.time()
     ingest_chunks(chunks, dataset="urdu_A")
     print(f"      Done in {time.time()-t0:.1f}s\n")
@@ -57,6 +70,7 @@ def preprocess(book_path: str, title: str = "Urdu", author: str = "Unknown") -> 
         "author":            author,
         "source_file":       os.path.abspath(book_path),
         "total_chunks":      len(chunks),
+        "verse_chunks":      verse_count,
         "preprocessed_at":   time.strftime("%Y-%m-%dT%H:%M:%S"),
     }
     os.makedirs("embeddings/urdu_A", exist_ok=True)
@@ -66,6 +80,7 @@ def preprocess(book_path: str, title: str = "Urdu", author: str = "Unknown") -> 
     print("="*60)
     print("  ✓  Preprocessing complete!")
     print(f"     {len(chunks)} chunks saved to embeddings/urdu_A/")
+    print(f"     {verse_count} verse chunks with is_verse=True")
     print("="*60 + "\n")
 
 

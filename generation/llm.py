@@ -5,7 +5,7 @@ LLM Interface — Groq API wrapper for Qwen model with API key rotation + token 
 import os
 import re
 import logging
-from groq import AsyncGroq, RateLimitError, AuthenticationError
+from groq import AsyncGroq, RateLimitError, AuthenticationError, APIStatusError, BadRequestError
 from generation.prompt import build_prompt, build_citations
 from config.config import RAG_MODES
 
@@ -50,7 +50,12 @@ def _get_client(key_index: int) -> AsyncGroq:
     return AsyncGroq(api_key=API_KEYS[key_index])
 
 
-ROTATABLE_ERRORS = (RateLimitError, AuthenticationError)
+ROTATABLE_ERRORS = (
+    RateLimitError, 
+    AuthenticationError,
+    APIStatusError,    # <--- This catches Error Code 413
+    BadRequestError    # <--- Catch-all for malformed / oversized payloads
+)
 
 
 # ── Think stripper ───────────────────────────────────────────────────────────

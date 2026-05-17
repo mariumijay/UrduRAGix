@@ -77,23 +77,23 @@ GENRE_TO_MODEL: dict[str, str] = {
     "zarbul_imsal":        "llama-3.1-8b-instant",
 
     # BALANCED
-    "short_question":      "llama-3.3-70b-versatile",
-    "general_qa":          "llama-3.3-70b-versatile",
-    "comprehension":       "llama-3.3-70b-versatile",
-    "translation":         "llama-3.3-70b-versatile",
-    "tashreeh_ghazal":     "llama-3.3-70b-versatile",
-    "tashreeh_nazam":      "llama-3.3-70b-versatile",
-    "nasar_tashreeh":      "llama-3.3-70b-versatile",
-    "poem_explanation":    "llama-3.3-70b-versatile",
-    "khulasa":             "llama-3.3-70b-versatile",
-    "markazi_khyal":       "llama-3.3-70b-versatile",
-    "application":         "llama-3.3-70b-versatile",
-    "letter":              "llama-3.3-70b-versatile",
-    "story":               "llama-3.3-70b-versatile",
-    "dialogue":            "llama-3.3-70b-versatile",
+    "short_question":      "qwen/qwen3-32b",
+    "general_qa":          "qwen/qwen3-32b",
+    "comprehension":       "qwen/qwen3-32b",
+    "translation":         "qwen/qwen3-32b",
+    "tashreeh_ghazal":     "qwen/qwen3-32b",
+    "tashreeh_nazam":      "qwen/qwen3-32b",
+    "nasar_tashreeh":      "qwen/qwen3-32b",
+    "poem_explanation":    "qwen/qwen3-32b",
+    "khulasa":             "qwen/qwen3-32b",
+    "markazi_khyal":       "qwen/qwen3-32b",
+    "application":         "qwen/qwen3-32b",
+    "letter":              "qwen/qwen3-32b",
+    "story":               "qwen/qwen3-32b",
+    "dialogue":            "qwen/qwen3-32b",
 
     # STRONG (default for unmatched)
-    "paper":               "qwen/qwen3-32b",
+    "paper":               "llama-3.3-70b-versatile",
 }
 
 DEFAULT_MODEL = "qwen/qwen3-32b"
