@@ -51,6 +51,7 @@ class QueryRequest(BaseModel):
     query:   str  = Field(..., min_length=2, description="Urdu question")
     top_k:   int  = Field(default=5, ge=1, le=20)
     stream:  bool = Field(default=False)
+    genre:   Optional[str] = Field(default=None)
 
 
 class CitationSchema(BaseModel):

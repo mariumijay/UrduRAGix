@@ -46,7 +46,7 @@ PREFIX_TO_GENRE = {
     "khulasa":             "khulasa",
     "summary":             "khulasa",
 
-    "markazi":             "markazi_khyal",
+    "markazi_khyal":             "markazi_khyal",
     "central":             "markazi_khyal",
 
     "zarbul":              "zarbul_imsal",

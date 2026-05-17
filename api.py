@@ -180,18 +180,24 @@ async def query_endpoint(req: QueryRequest):
                 usage={}
             )
     else:
-        genre = await classify_query_full(urdu_query)
+        if req.genre and req.genre != "default":
+            genre = req.genre
+            logger.info(f"Using frontend genre: {genre}")
+        else:
+            genre = await classify_query_full(urdu_query)
+            logger.info(f"Classified genre: {genre}")
+            
         model = get_model_for_genre(genre)
         chunks = _retrieve(urdu_query, top_k=req.top_k)
 
     if req.stream:
         async def event_stream():
-            async for char in stream_answer(urdu_query, chunks, model=model):
+            async for char in stream_answer(urdu_query, chunks, model=model, genre=genre):
                 yield char
 
         return StreamingResponse(event_stream(), media_type="text/event-stream")
 
-    result = await generate_answer(urdu_query, chunks, model=model)
+    result = await generate_answer(urdu_query, chunks, model=model, genre=genre)
 
     citations = [
         CitationSchema(

@@ -1,70 +1,14 @@
 RAG_MODES = {
-    "paper_mcq": {
-        "MAX_CONTEXT_CHUNKS": 6,
-        "MAX_TOKENS_PER_CHUNK": 100,
-        "MAX_OUTPUT_TOKENS": 1200,
-        "TOP_K": 6
-    },
-    "mcq": {
-        "MAX_CONTEXT_CHUNKS": 4,
-        "MAX_TOKENS_PER_CHUNK": 300,
-        "MAX_OUTPUT_TOKENS": 800,
-        "TOP_K": 4
-    },
-    "one_line": {
-        "MAX_CONTEXT_CHUNKS": 3,
-        "MAX_TOKENS_PER_CHUNK": 200,
-        "MAX_OUTPUT_TOKENS": 300,
-        "TOP_K": 3
-    },
-    "short": {
-        "MAX_CONTEXT_CHUNKS": 5,
-        "MAX_TOKENS_PER_CHUNK": 500,
-        "MAX_OUTPUT_TOKENS": 3045,
-        "TOP_K": 5
-    },
-    "tashreeh": {
-        "MAX_CONTEXT_CHUNKS": 5,
-        "MAX_TOKENS_PER_CHUNK": 400,
-        "MAX_OUTPUT_TOKENS": 2000,
-        "TOP_K": 5
-    },
-    "khulasa": {
-        "MAX_CONTEXT_CHUNKS": 6,
-        "MAX_TOKENS_PER_CHUNK": 450,
-        "MAX_OUTPUT_TOKENS": 2500,
-        "TOP_K": 6
-    },
-    "markazi": {
-        "MAX_CONTEXT_CHUNKS": 5,
-        "MAX_TOKENS_PER_CHUNK": 400,
-        "MAX_OUTPUT_TOKENS": 600,
-        "TOP_K": 5
-    },
-    "application": {
-        "MAX_CONTEXT_CHUNKS": 4,
-        "MAX_TOKENS_PER_CHUNK": 350,
-        "MAX_OUTPUT_TOKENS": 1200,
-        "TOP_K": 4
-    },
-    "letter": { 
-        "MAX_CONTEXT_CHUNKS": 4,
-        "MAX_TOKENS_PER_CHUNK": 350,
-        "MAX_OUTPUT_TOKENS": 1200,
-        "TOP_K": 4
-    },
-    "story":  { 
-        "MAX_CONTEXT_CHUNKS": 4,
-        "MAX_TOKENS_PER_CHUNK": 350,
-        "MAX_OUTPUT_TOKENS": 1500,
-        "TOP_K": 4 
-        },
-    "dialogue": { 
-        "MAX_CONTEXT_CHUNKS": 4,
-        "MAX_TOKENS_PER_CHUNK": 350,
-        "MAX_OUTPUT_TOKENS": 1500,
-        "TOP_K": 4
-    }
+    "mcq":      {"MAX_CONTEXT_CHUNKS": 3, "MAX_TOKENS_PER_CHUNK": 150, "MAX_OUTPUT_TOKENS": 600, "TOP_K": 3},
+    "one_line": {"MAX_CONTEXT_CHUNKS": 2, "MAX_TOKENS_PER_CHUNK": 100, "MAX_OUTPUT_TOKENS": 200, "TOP_K": 2},
+    "short":    {"MAX_CONTEXT_CHUNKS": 3, "MAX_TOKENS_PER_CHUNK": 200, "MAX_OUTPUT_TOKENS": 800, "TOP_K": 3},
+    "tashreeh": {"MAX_CONTEXT_CHUNKS": 10, "MAX_TOKENS_PER_CHUNK": 700, "MAX_OUTPUT_TOKENS": 1200, "TOP_K": 8},
+    "khulasa":  {"MAX_CONTEXT_CHUNKS": 4, "MAX_TOKENS_PER_CHUNK": 500, "MAX_OUTPUT_TOKENS": 1900, "TOP_K": 4},
+    "markazi_khyal":  {"MAX_CONTEXT_CHUNKS": 3, "MAX_TOKENS_PER_CHUNK": 500, "MAX_OUTPUT_TOKENS": 1024, "TOP_K": 3},
+    "application": {"MAX_CONTEXT_CHUNKS": 2, "MAX_TOKENS_PER_CHUNK": 150, "MAX_OUTPUT_TOKENS": 2000, "TOP_K": 2},
+    "letter":   {"MAX_CONTEXT_CHUNKS": 10, "MAX_TOKENS_PER_CHUNK": 500, "MAX_OUTPUT_TOKENS": 3000, "TOP_K": 2},
+    "story":    {"MAX_CONTEXT_CHUNKS": 2, "MAX_TOKENS_PER_CHUNK": 150, "MAX_OUTPUT_TOKENS": 1500, "TOP_K": 2},
+    "dialogue": {"MAX_CONTEXT_CHUNKS": 2, "MAX_TOKENS_PER_CHUNK": 150, "MAX_OUTPUT_TOKENS": 1500, "TOP_K": 2},
 }
 
 CHUNK_OVERLAP = 100
@@ -121,7 +65,7 @@ GENRE_TO_MODE: dict[str, str] = {
     "khulasa":             "khulasa",
 
     # conceptual / moral
-    "markazi":       "markazi",
+    "markazi_khyal":       "markazi_khyal",
 
     # formatted writing tasks
     "application":         "application",

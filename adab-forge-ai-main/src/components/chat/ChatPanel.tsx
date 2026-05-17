@@ -8,12 +8,89 @@ import { Sparkles } from "lucide-react";
 
 function detectGenre(text: string): Genre {
   const t = text.toLowerCase();
-  if (/mcq|سوال نمبر|چار میں سے/.test(text)) return "mcq";
-  if (/تشریح|شعر|نظم/.test(text)) return "tashreeh";
-  if (/خط|درخواست/.test(text)) return "letter";
-  if (/کہانی/.test(text)) return "story";
-  if (/درست|غلط|اصلاح/.test(text)) return "sentence_correction";
-  if (/پرچہ|paper|exam/.test(t)) return "paper_generation";
+  // MCQ / Objective
+  if (/mcq|سوال نمبر|چار میں سے|multiple choice|objective/.test(text)) {
+    return "mcq";
+  }
+
+  // Paper Generation
+  if (/پرچہ|paper|exam|پیپر|test paper/.test(text)) {
+    return "paper_generation";
+  }
+
+  // Summary
+  if (/خلاصہ|summary|khulasa/.test(text)) {
+    return "khulasa";
+  }
+
+  // Markazi Khyal / Moral
+  if (/مرکزی خیال|مرکزی خيال|markazi\s*khyal|moral|theme/.test(text)) {
+    return "markazi_khyal";
+  }
+
+  // Tashreeh (Poetry / Explanation)
+  if (/تشریح|tashreeh|شعر|ghazal|nazm|نظم|غزل|poem|poetry|explain/.test(text)) {
+    return "tashreeh";
+  }
+
+  // Letter Writing
+  if (/خط|letter|personal letter|friendly letter|formal letter/.test(text)) {
+    return "letter";
+  }
+
+  // Application Writing
+  if (/درخواست|application|job application|leave application|request application/.test(text)) {
+    return "application";
+  }
+  // Story Writing
+  if (/کہانی|story|short story|write a story/.test(text)) {
+    return "story";
+  }
+  // Dialogue Writing
+  if (/مکالمہ|dialogue|conversation|write a dialogue|complete dialogue/.test(text)) {
+    return "dialogue";
+  }
+
+  // Sentence Correction
+  if (/درست|غلط|اصلاح|correct|sentence correction|grammar/.test(text)) {
+    return "sentence_correction";
+  }
+
+  // Translation (very useful for Urdu RAG systems)
+  if (/ترجمہ|translate|translation/.test(text)) {
+    return "translation";
+  }
+
+  // Question Answer / Long Question
+  if (/سوال جواب|short question|explain question|answer the question/.test(text)) {
+    return "qa";
+  }
+
+  // Vocabulary / Meanings
+  if (/معنی|لفظ|meaning|vocabulary|synonym|antonym/.test(text)) {
+    return "vocabulary";
+  }
+  // Nasar Tashreeh (Prose Explanation)
+  if (/(نثر|nasar|نثر تشریح|nasar tashreeh|prose explanation|explain passage)/i.test(text)) {
+    return "nasar_tashreeh";
+  }
+  // Zarbul Imal (Proverbs)
+  if (/(ضرب الامثال|zarbul imsal|proverb|proverbs|کہاوت)/i.test(text)) {
+    return "zarbul_imsal";
+  }
+  // Sentence Correction / Grammar
+  if (/(درست|غلط|اصلاح|sentence correction|grammar|correct sentence|صحیح جملہ)/i.test(text)) {
+    return "sentence_correction";
+  }
+  // Vocabulary / Word Meanings
+  if (/معنی|لفظ|meaning|vocabulary|word meaning|word_meanings|متضاد|مترادف/i.test(text)) {
+    return "word_meanings";
+  }
+  // Comprehension / Reading Comprehension
+  if (/comprehension|پیراگراف| lecture|سوالات پیراگراف|passage comprehension/i.test(text)) {
+    return "comprehension";
+  }
+
   return "default";
 }
 

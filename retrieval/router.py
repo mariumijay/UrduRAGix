@@ -90,7 +90,7 @@ Rules:
 Return ONLY the label. No explanation. No Urdu. Just the English label."""
 
 _FULL_SYSTEM = """\
-You are a query classifier for a Pakistani Urdu Class 9-10 exam assistant.
+You are a query classifier for a Pakistani Urdu Class 9 exam assistant.
 Read the query and return ONLY one label from this exact list:
 
 mcq, word_meanings, sentence_correction, zarbul_imsal,

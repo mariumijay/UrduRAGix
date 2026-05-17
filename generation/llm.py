@@ -6,8 +6,9 @@ import os
 import re
 import logging
 from groq import AsyncGroq, RateLimitError, AuthenticationError, APIStatusError, BadRequestError
-from generation.prompt import build_prompt, build_citations
-from config.config import RAG_MODES
+from generation.prompt import build_citations
+from generation.prompt_b import get_prompt
+from config.config import RAG_MODES, GENRE_TO_MODE
 
 logger = logging.getLogger(__name__)
 
@@ -51,10 +52,8 @@ def _get_client(key_index: int) -> AsyncGroq:
 
 
 ROTATABLE_ERRORS = (
-    RateLimitError, 
-    AuthenticationError,
-    APIStatusError,    # <--- This catches Error Code 413
-    BadRequestError    # <--- Catch-all for malformed / oversized payloads
+    RateLimitError,       # rate limit hit — try next key
+    AuthenticationError,  # invalid/expired key — try next key
 )
 
 
@@ -116,10 +115,12 @@ async def _create_completion(model: str, messages: list, stream: bool, **kwargs)
 
 # ── Public API ───────────────────────────────────────────────────────────────
 
-async def stream_answer(query, context_chunks, model=None, mode="short"):
+async def stream_answer(query, context_chunks, model=None, mode=None, genre="general_qa"):
+    if mode is None:
+        mode = GENRE_TO_MODE.get(genre, "short")
     _, _, max_output = _get_mode_limits(mode) 
     safe_chunks = _trim_chunks(context_chunks, mode=mode)
-    messages    = build_prompt(query, safe_chunks)
+    messages    = get_prompt(genre, safe_chunks, query)
 
     full_response = []  # buffer to strip <think> after stream ends
 
@@ -147,12 +148,14 @@ async def stream_answer(query, context_chunks, model=None, mode="short"):
         yield f"\n\nخرابی: {str(e)}"
 
 
-async def generate_answer(query, context_chunks, model=None, mode: str = "short") -> dict:
+async def generate_answer(query, context_chunks, model=None, mode=None, genre="general_qa") -> dict:
     """Non-streaming: return full answer + citations."""
     model       = model or DEFAULT_MODEL
+    if mode is None:
+        mode = GENRE_TO_MODE.get(genre, "short")
     safe_chunks = _trim_chunks(context_chunks, mode=mode)
     _, _, max_output = _get_mode_limits(mode)
-    messages    = build_prompt(query, safe_chunks)
+    messages    = get_prompt(genre, safe_chunks, query)
 
     try:
         response = await _create_completion(
