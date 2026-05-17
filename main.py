@@ -18,9 +18,14 @@ import re
 import sys
 from pathlib import Path
 
+# Reconfigure stdout and stderr for UTF-8 on Windows
+sys.stdout.reconfigure(encoding='utf-8')
+sys.stderr.reconfigure(encoding='utf-8')
+
 from utils.urdu_render import format_for_console as format_urdu
 from dotenv import load_dotenv
 from config.config import GENRE_TO_MODE
+from retrieval.poetry_loader import load_shair_for_paper
 
 load_dotenv()
 
@@ -431,6 +436,66 @@ def retrieve_for_paper(current_state) -> tuple[list[dict], list[dict]]:
 # ── Paper helper (shared between fast-path and LLM-path) ──────────────────────
 from typing import AsyncGenerator
 
+def _extract_couplets_from_file(file_path: Path) -> list[str]:
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        lines = [line.strip() for line in f if line.strip()]
+    
+    # Exclude parenthesized citation at the end (e.g. starts with '(' and ends with ')')
+    if lines and lines[-1].startswith("(") and lines[-1].endswith(")"):
+        lines.pop()
+        
+    couplets = []
+    # Group remaining lines by pairs of 2
+    for i in range(0, len(lines) - 1, 2):
+        couplet = f"{lines[i]}\n{lines[i+1]}"
+        couplets.append(couplet)
+    return couplets
+
+def _load_direct_couplets() -> tuple[list[dict], list[dict]]:
+    nazam_chunks = []
+    ghazal_chunks = []
+    
+    # Load ghazal couplets
+    ghazal_dir = Path("data/urdu_A/ghazal")
+    if ghazal_dir.exists():
+        for f in sorted(ghazal_dir.glob("*.txt")):
+            if f.stat().st_size == 0:
+                continue
+            couplets = _extract_couplets_from_file(f)
+            poet_name = f.stem.split(".")[1].strip() if "." in f.stem else f.stem
+            for idx, c in enumerate(couplets):
+                ghazal_chunks.append({
+                    "chunk_id": f"ghazal_file_{f.stem}_{idx}",
+                    "text": c,
+                    "is_verse": True,
+                    "genre": "ghazal",
+                    "chapter": poet_name,
+                    "book_title": "Urdu A",
+                    "author": poet_name,
+                    "dataset": "urdu_A"
+                })
+                
+    # Load nazam couplets
+    nazam_dir = Path("data/urdu_A/nazam")
+    if nazam_dir.exists():
+        for f in sorted(nazam_dir.glob("*.txt")):
+            if f.stat().st_size == 0:
+                continue
+            couplets = _extract_couplets_from_file(f)
+            nazam_name = f.stem.split(".")[1].strip() if "." in f.stem else f.stem
+            for idx, c in enumerate(couplets):
+                nazam_chunks.append({
+                    "chunk_id": f"nazam_file_{f.stem}_{idx}",
+                    "text": c,
+                    "is_verse": True,
+                    "genre": "nazam",
+                    "chapter": nazam_name,
+                    "book_title": "Urdu A",
+                    "author": "",
+                    "dataset": "urdu_A"
+                })
+    return nazam_chunks, ghazal_chunks
+
 async def _run_paper(urdu_query: str, meta_a: list[dict], meta_b: list[dict]) -> AsyncGenerator[str, None]:
     """
     Generate a complete Class 9 Punjab Board Urdu paper.
@@ -445,8 +510,8 @@ async def _run_paper(urdu_query: str, meta_a: list[dict], meta_b: list[dict]) ->
     Part 5 → Q7: Khat ya Darkhwast
     Part 6 → Q8+Q9: Story/Mukalma + Qawaid (jumlay + zarb ul amsal)
     """
-    print("\\n[پرچہ ساز] جاری ہے… (حصہ دوم — Q2 تا Q9 — تقریباً 2.5 منٹ)")
-    print("نوٹ: حصہ اول (MCQs) الگ پرچے پر ہے — یہاں نہیں بنایا جاتا۔\\n")
+    print("\n[پرچہ ساز] جاری ہے… (حصہ دوم — Q2 تا Q9 — تقریباً 2.5 منٹ)")
+    print("نوٹ: حصہ اول (MCQs) الگ پرچے پر ہے — یہاں نہیں بنایا جاتا۔\n")
  
     import random
  
@@ -462,8 +527,21 @@ async def _run_paper(urdu_query: str, meta_a: list[dict], meta_b: list[dict]) ->
         return hits
  
     mcqs_pool = by_genre(meta_a, {"mcqs", "MCQ", "mcq"})
-    nazam_pool   = by_genre(meta_a, {"نظم", "تشریح_نظم", "tashreeh_nazam", "حمد", "نعت", "محنت کی برکات", "جاوید کے نام", "پیام لطیف", "محمد", "کرکٹ اور مشاعرہ"}, must_be_verse=True)
-    ghazal_pool  = by_genre(meta_a, {"غزل", "تشریح_غزل", "tashreeh_ghazal"}, must_be_verse=True)
+    
+    # Try loading direct couplets first, fall back to RAG meta_a otherwise
+    direct_nazam, direct_ghazal = _load_direct_couplets()
+    if direct_nazam:
+        nazam_pool = direct_nazam
+    else:
+        print("[WARN] No direct nazam couplets loaded from folders, falling back to RAG index")
+        nazam_pool = by_genre(meta_a, {"نظم", "تشریح_نظم", "tashreeh_nazam", "حمد", "نعت", "محنت کی برکات", "جاوید کے نام", "پیام لطیف", "محمد", "کرکٹ اور مشاعرہ"}, must_be_verse=True)
+
+    if direct_ghazal:
+        ghazal_pool = direct_ghazal
+    else:
+        print("[WARN] No direct ghazal couplets loaded from folders, falling back to RAG index")
+        ghazal_pool = by_genre(meta_a, {"غزل", "تشریح_غزل", "tashreeh_ghazal"}, must_be_verse=True)
+        
     sabaq_pool   = by_genre(meta_a, {"نثر", "سبق", "nasar_tashreeh", "khulasa", "short_question"})
     khat_pool    = by_genre(meta_b, {"خط", "letter"})
     darkhwast_pool = by_genre(meta_b, {"درخواست", "application"})
@@ -514,8 +592,23 @@ async def _run_paper(urdu_query: str, meta_a: list[dict], meta_b: list[dict]) ->
     p1 = cap(pick(mcqs_pool, 15), max_chars=400)
     # Part 2 (Q2): nazam ashaar + ghazal ashaar for tashreeh
     # Increased pool sizes for better verse coverage; higher max_chars to avoid truncating verses
-    p2 = cap(pick(nazam_pool, 8, prioritize_verse=True) + pick(ghazal_pool, 6, prioritize_verse=True), max_chars=800)
- 
+    # Part 2 (Q2): Load شعر DIRECTLY from disk files for authentic verse
+    _nazam_shair, _ghazal_shair = load_shair_for_paper(
+        data_dir="data/urdu_A",
+        nazam_count=4,
+        ghazal_count=3,
+    )
+    if _nazam_shair or _ghazal_shair:
+        p2 = _nazam_shair + _ghazal_shair
+        used_ids.update(c.get("chunk_id", "") for c in p2 if c.get("chunk_id"))
+        print(f"  📜 Q2: {len(_nazam_shair)} نظم + {len(_ghazal_shair)} غزل shair loaded from files")
+    else:
+        p2 = cap(
+            pick(nazam_pool, 8, prioritize_verse=True) +
+            pick(ghazal_pool, 6, prioritize_verse=True),
+            max_chars=800,
+        )
+        print("  ⚠️ Q2: falling back to embedding search")
     # Part 3 (Q3): sabaq passages for nasr tashreeh
     p3 = cap(pick(sabaq_pool, 4), max_chars=300)
  
@@ -552,7 +645,7 @@ async def _run_paper(urdu_query: str, meta_a: list[dict], meta_b: list[dict]) ->
         (6, p6 or fallback, 500),   # Q6 مرکزی خیال
         (7, p7 or fallback, 700),   # Q7 خط یا درخواست
         (8, p8 or fallback, 600),   # Q8 مضمون/کہانی یا مکالمہ
-        (9, p9 or fallback, 500),   # Q9 قواعد
+        (9, p9 or fallback, 350),   # Q9 قواعد
     ]
 
     part_labels = {
@@ -601,6 +694,8 @@ async def _run_paper(urdu_query: str, meta_a: list[dict], meta_b: list[dict]) ->
         print(format_urdu(paper_text))
         print("\n" + "─" * 50 + "\n")
 
+        yield paper_text + "\n\n" + "─" * 50 + "\n\n"
+
         # Rate limit guard between parts (skip after last)
         if i < len(part_configs) - 1:
             await asyncio.sleep(65)
@@ -611,6 +706,8 @@ async def _run_paper(urdu_query: str, meta_a: list[dict], meta_b: list[dict]) ->
     print(format_urdu("═" * 50))
 
     print("Done.")
+
+    yield "\n" + "═" * 50 + "\n" + "پرچہ مکمل ہوا" + "\n" + "═" * 50 + "\n"
 
 
 def _urdu_numeral(n: int) -> str:

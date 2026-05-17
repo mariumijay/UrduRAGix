@@ -8,7 +8,12 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 from pathlib import Path
+
+# Reconfigure stdout and stderr for UTF-8 on Windows
+sys.stdout.reconfigure(encoding='utf-8')
+sys.stderr.reconfigure(encoding='utf-8')
 
 from dotenv import load_dotenv
 
@@ -158,13 +163,22 @@ async def query_endpoint(req: QueryRequest):
     intent = detect_intent(urdu_query)
     if intent == "paper":
         meta_a, meta_b = retrieve_for_paper(state)
-        await _run_paper(urdu_query, meta_a, meta_b)
-        return QueryResponse(
-            answer="[پرچہ ساز] Paper generated and printed to console.",
-            citations=[],
-            model=DEFAULT_MODEL,
-            usage={}
-        )
+        if req.stream:
+            async def paper_stream():
+                async for part in _run_paper(urdu_query, meta_a, meta_b):
+                    yield part
+            return StreamingResponse(paper_stream(), media_type="text/event-stream")
+        else:
+            parts = []
+            async for part in _run_paper(urdu_query, meta_a, meta_b):
+                parts.append(part)
+            full_paper = "".join(parts)
+            return QueryResponse(
+                answer=full_paper,
+                citations=[],
+                model=DEFAULT_MODEL,
+                usage={}
+            )
     else:
         genre = await classify_query_full(urdu_query)
         model = get_model_for_genre(genre)
